@@ -1,5 +1,7 @@
+import gc
 import re
 import csv
+import time
 import itertools
 import numpy as np
 import seaborn as sns
@@ -9,7 +11,6 @@ from sklearn.metrics import f1_score
 from sklearn.metrics import recall_score
 from sklearn.metrics import precision_score
 from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LogisticRegression
 
 
 def load_data(path, limit=None):
@@ -44,7 +45,6 @@ def print_feature(header, data, max_feature=5):
 def delete_feature(header, data, feature_name):
     assert feature_name in header, "Index of {} does not exist".format(
         feature_name)
-
     index = np.where(header == feature_name)
     return np.delete(header, index), np.delete(data, index, 1)
 
@@ -58,17 +58,14 @@ def convert_date(header, data):
     for i, d in enumerate(data):
         dt = datetime.fromisoformat(d[index][0])
         new_data.append(
-            np.concatenate(
-                (np.delete(d, index), [dt.year, dt.month, dt.day, dt.hour],
-                 np.eye(7)[dt.date().weekday()])))
+            [dt.year, dt.month, dt.day, dt.hour,
+             dt.date().weekday()])
 
-    date_header = [
-        "Year", "Month", "Day", "Hour", "Monday", "Tuesday", "Wednesday",
-        "Thursday", "Friday", "Saturday", "Sunday"
-    ]
-    new_header = np.concatenate((np.delete(header, index), date_header))
+    data = np.concatenate((np.delete(data, index, axis=1), new_data), axis=1)
+    header = np.concatenate((np.delete(header, index),
+                             ["Year", "Month", "Day", "Hour", "Weekday"]))
 
-    return np.asarray(new_header), np.asarray(new_data)
+    return np.asarray(header), np.asarray(data)
 
 
 def convert_one_hot(header, data, feature_name):
@@ -76,44 +73,42 @@ def convert_one_hot(header, data, feature_name):
         feature_name)
 
     index = np.where(header == feature_name)
-
-    new_header, new_data = [], []
-
     mapping, enc = np.unique(data[:, index], return_inverse=True)
-
     add_header = [feature_name + " " + str(m) for m in mapping]
+    header = np.concatenate((np.delete(header, index), add_header))
+    new_data = [
+        np.eye(mapping.shape[0])[e] for i, (d, e) in enumerate(zip(data, enc))
+    ]
 
-    new_header = np.concatenate((np.delete(header, index), add_header))
+    data = np.concatenate((np.delete(data, index, axis=1), new_data), axis=1)
 
-    for i, (d, e) in enumerate(zip(data, enc)):
-        v = np.eye(mapping.shape[0])[e]
-        new_data.append(np.concatenate((np.delete(d, index), v)))
-
-    return np.asarray(new_header), np.asarray(new_data)
+    return np.asarray(header), np.asarray(data)
 
 
 def convert_weather(header, data, weather):
     assert "Weather" in header, "Index of Weather does not exist"
 
-    new_data = []
     N = len(weather)
     index = np.where(header == "Weather")
 
-    for i, d in enumerate(data):
-        new_weather = [
-            1 if any([w == v for v in d[index][0].split(",")]) else 0
-            for w in weather
-        ]
-        new_data.append(np.concatenate((np.delete(d, index), new_weather)))
+    new_data = [[
+        1 if any([w == v for v in d[index][0].split(",")]) else 0
+        for w in weather
+    ] for i, d in enumerate(data)]
 
-    new_header = np.concatenate((np.delete(header, index), weather))
+    data = np.concatenate((np.delete(data, index, axis=1), new_data), axis=1)
+    header = np.concatenate((np.delete(header, index), weather))
 
-    return np.asarray(new_header), np.asarray(new_data)
+    return np.asarray(header), np.asarray(data)
+
+
+def remove_missing(data):
+    return np.asarray([d for d in data if "" not in d])
 
 
 def convert_type(data):
-    return np.asarray(
-        [[float(v.replace(",", ".")) for v in d] for d in data if "" not in d])
+    return np.asarray([[v.replace(",", ".") for v in d] for d in data],
+                      dtype=float)
 
 
 def normalization_feature(header, data, feature_name):
@@ -189,3 +184,76 @@ def compute_f1(proba, y_true, step=0.01, plot=False):
         plt.show()
 
     return max(f1), step * np.argmax(f1)
+
+
+def pipeline(path="data/training.csv",
+             limit=None,
+             delete_features=["Visility indicator", "hmdx", "Wind Chill"],
+             cvrt_date=True,
+             weather=[
+                 "Orages", "Brouillard", "Bruine", "Généralement dégagé",
+                 "Généralement nuageux", "Pluie", "Pluie modérée",
+                 "Pluie forte", "Dégagé", "Nuageux", "Neige"
+             ],
+             one_hot_features=["Year", "Month", "Weekday"],
+             norm_features=[
+                 "Temperature (°C)", "Drew point (°C)",
+                 "Relativite humidity (%)", "wind direction (10s deg)",
+                 "Wind speed (km/h)", "Pressure at the station (kPa)"
+             ]):
+    """
+    path :           (STRING) path of the file to load.
+    limit:           (INT) limit the number of example to load.
+    delete_features: (LIST) feature names to remove.
+    cvrt_date:       (BOOLEAN) convert the data
+    weather:         (LIST) weather to consider. All other will be dropped.
+    one_hot_features (LIST) feature names to convert in one-hot vector.
+    norm_features    (LIST) feature names to normalize in one-hot vector
+    """
+    start = time.time()
+    header, data = load_data(path, limit)
+    print("Data loaded ({:.1f}s)".format(time.time() - start))
+
+    for f in delete_features:
+        start = time.time()
+        header, data = delete_feature(header, data, f)
+        print("{} deleted ({:.1f}s)".format(f, time.time() - start))
+
+    if cvrt_date:
+        start = time.time()
+        header, data = convert_date(header, data)
+        print("Date splited in Year/Month/Day/Hour/Weekday ({:.1f}s)".format(
+            time.time() - start))
+
+    for f in one_hot_features:
+        start = time.time()
+        header, data = convert_one_hot(header, data, f)
+        print("{} converted in one-hot vector ({:.1f}s)".format(
+            f,
+            time.time() - start))
+
+    if weather:
+        start = time.time()
+        header, data = convert_weather(header, data, weather)
+        print("Weather converted ({:.1f}s)".format(time.time() - start))
+
+    start = time.time()
+    data = remove_missing(data)
+    print("Remove samples with missing values ({:.1f}s)".format(time.time() -
+                                                                start))
+
+    start = time.time()
+    data = convert_type(data)
+    print("Data converted to float ({:.1f}s)".format(time.time() - start))
+
+    for f in norm_features:
+        start = time.time()
+        normalization_feature(header, data, f)
+        print("{} normalized ({:.1f}s)".format(f, time.time() - start))
+
+    start = time.time()
+    header, x, y, label = split(header, data)
+    print("split data into x, y, and label ({:.1f}s)".format(time.time() -
+                                                             start))
+    gc.collect()
+    return header, x, y, label
