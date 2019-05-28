@@ -186,6 +186,14 @@ def compute_f1(proba, y_true, step=0.01, plot=False):
     return max(f1), step * np.argmax(f1)
 
 
+def missing_to_value(header, data, feature_name, new_value):
+    index = np.where(header == feature_name)
+    for d in data:
+        if d[index] == "":
+            d[index] = new_value
+    return header, data
+
+
 def pipeline(path="data/training.csv",
              limit=None,
              delete_features=["Visility indicator", "hmdx", "Wind Chill"],
@@ -200,7 +208,9 @@ def pipeline(path="data/training.csv",
                  "Temperature (°C)", "Drew point (°C)",
                  "Relativite humidity (%)", "wind direction (10s deg)",
                  "Wind speed (km/h)", "Pressure at the station (kPa)"
-             ]):
+             ],
+             missing_features=['wind direction (10s deg)'],
+             missing_values=[23]):
     """
     path :           (STRING) path of the file to load.
     limit:           (INT) limit the number of example to load.
@@ -237,11 +247,15 @@ def pipeline(path="data/training.csv",
         header, data = convert_weather(header, data, weather)
         print("Weather converted ({:.1f}s)".format(time.time() - start))
 
+    for f, v in zip(missing_features, missing_values):
+        start = time.time()
+        header, data = missing_to_value(header, data, f, v)
+    print("Replace missing values ({:.1f}s)".format(time.time() - start))
+
     start = time.time()
     data = remove_missing(data)
     print("Remove samples with missing values ({:.1f}s)".format(time.time() -
                                                                 start))
-
     start = time.time()
     data = convert_type(data)
     print("Data converted to float ({:.1f}s)".format(time.time() - start))
@@ -252,8 +266,15 @@ def pipeline(path="data/training.csv",
         print("{} normalized ({:.1f}s)".format(f, time.time() - start))
 
     start = time.time()
+    index = np.where(header == 'Station Code')
+    data = data[data[:, int(index[0])].argsort()]
+    print("Sort data according to station code ({:.1f}s)".format(time.time() -
+                                                                 start))
+
+    start = time.time()
     header, x, y, label = split(header, data)
     print("split data into x, y, and label ({:.1f}s)".format(time.time() -
                                                              start))
+
     gc.collect()
     return header, x, y, label
