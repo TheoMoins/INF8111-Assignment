@@ -46,7 +46,7 @@ def delete_feature(header, data, feature_name):
     assert feature_name in header, "Index of {} does not exist".format(
         feature_name)
     index = np.where(header == feature_name)
-    return np.delete(header, index), np.delete(data, index, 1)
+    return np.delete(header, index), np.delete(data, index, axis=1)
 
 
 def convert_date(header, data):
@@ -61,8 +61,11 @@ def convert_date(header, data):
             [dt.year, dt.month, dt.day, dt.hour,
              dt.date().weekday()])
 
-    data = np.concatenate((np.delete(data, index, axis=1), new_data), axis=1)
-    header = np.concatenate((np.delete(header, index),
+    data = np.delete(data, index, axis=1)
+    data = np.concatenate((data, new_data), axis=1)
+
+    header = np.delete(header, index)
+    header = np.concatenate((header,
                              ["Year", "Month", "Day", "Hour", "Weekday"]))
 
     return np.asarray(header), np.asarray(data)
@@ -75,12 +78,16 @@ def convert_one_hot(header, data, feature_name):
     index = np.where(header == feature_name)
     mapping, enc = np.unique(data[:, index], return_inverse=True)
     add_header = [feature_name + " " + str(m) for m in mapping]
-    header = np.concatenate((np.delete(header, index), add_header))
+
+    header = np.delete(header, index)
+    header = np.concatenate((header, add_header))
+
     new_data = [
         np.eye(mapping.shape[0])[e] for i, (d, e) in enumerate(zip(data, enc))
     ]
 
-    data = np.concatenate((np.delete(data, index, axis=1), new_data), axis=1)
+    data = np.delete(data, index, axis=1)
+    data = np.concatenate((data, new_data), axis=1)
 
     return np.asarray(header), np.asarray(data)
 
@@ -96,8 +103,11 @@ def convert_weather(header, data, weather):
         for w in weather
     ] for i, d in enumerate(data)]
 
-    data = np.concatenate((np.delete(data, index, axis=1), new_data), axis=1)
-    header = np.concatenate((np.delete(header, index), weather))
+    data = np.delete(data, index, axis=1)
+    data = np.concatenate((data, new_data), axis=1)
+
+    header = np.delete(header, index)
+    header = np.concatenate((header, weather))
 
     return np.asarray(header), np.asarray(data)
 
@@ -114,14 +124,14 @@ def convert_type(data):
 def normalization_feature(header, data, feature_name):
     assert feature_name in header, "Index of {} does not exist".format(
         feature_name)
-    index = np.where(header == feature_name)
+    index = np.where(header == feature_name)[0][0]
     data[:, index] = (data[:, index] - np.mean(data[:, index])) / np.std(
         data[:, index])
 
 
 def split(header, data):
-    y_index = np.where(header == "Withdrawals")
-    l_index = np.where(header == "Volume")
+    y_index = np.where(header == "Withdrawals")[0][0]
+    l_index = np.where(header == "Volume")[0][0]
 
     y = data[:, y_index].reshape(-1)
     label = data[:, l_index].reshape(-1)
@@ -135,7 +145,7 @@ def split(header, data):
 def plot_feature(header, x, feature_name):
     assert feature_name in header, "Index of {} does not exist".format(
         feature_name)
-    index = np.where(header == feature_name)
+    index = np.where(header == feature_name)[0][0]
 
     plt.figure(figsize=(6, 4), dpi=300)
     sns.distplot(x[:, index])
@@ -187,7 +197,7 @@ def compute_f1(proba, y_true, step=0.01, plot=False):
 
 
 def missing_to_value(header, data, feature_name, new_value):
-    index = np.where(header == feature_name)
+    index = np.where(header == feature_name)[0][0]
     for d in data:
         if d[index] == "":
             d[index] = new_value
@@ -219,6 +229,8 @@ def pipeline(path="data/training.csv",
     weather:         (LIST) weather to consider. All other will be dropped.
     one_hot_features (LIST) feature names to convert in one-hot vector.
     norm_features    (LIST) feature names to normalize in one-hot vector
+    missing_features (LIST) feature which missing values are to replace 
+    missing_values   (LIST) value with which to replace the missing values
     """
     start = time.time()
     header, data = load_data(path, limit)
@@ -266,8 +278,8 @@ def pipeline(path="data/training.csv",
         print("{} normalized ({:.1f}s)".format(f, time.time() - start))
 
     start = time.time()
-    index = np.where(header == 'Station Code')
-    data = data[data[:, int(index[0])].argsort()]
+    index = np.where(header == 'Station Code')[0][0]
+    data = data[data[:, index].argsort()]
     print("Sort data according to station code ({:.1f}s)".format(time.time() -
                                                                  start))
 
