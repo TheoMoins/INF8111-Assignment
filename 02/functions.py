@@ -3,6 +3,7 @@ import re
 import csv
 import time
 import itertools
+import statistics
 import numpy as np
 import seaborn as sns
 from datetime import datetime
@@ -20,7 +21,7 @@ def load_data(path, limit=None):
         header = next(reader)
         data = [[value for value in row]
                 for row in itertools.islice(reader, limit)]
-    return np.asarray(header), np.asarray(data)
+    return header, data
 
 
 def print_sample(header, data, n=0):
@@ -29,7 +30,7 @@ def print_sample(header, data, n=0):
 
 
 def print_feature(header, data, max_feature=5):
-    for n_feature, feature in enumerate(data.T):
+    for n_feature, feature in enumerate(zip(*data)):
         values, counts = np.unique(feature, return_counts=True)
         counts_values = sorted(zip(counts, values), reverse=True)
         print("-" * 50)
@@ -39,131 +40,100 @@ def print_feature(header, data, max_feature=5):
         for i, (v, c) in enumerate(counts_values):
             if i > max_feature:
                 break
-            print("{:10} : {:10} ({:5.1%})".format(c, v, v / data.shape[0]))
+            print("{:10} : {:10} ({:5.1%})".format(c, v, v / len(data)))
 
 
 def delete_feature(header, data, feature_name):
-    assert feature_name in header, "Index of {} does not exist".format(
-        feature_name)
-    index = np.where(header == feature_name)
-    return np.delete(header, index), np.delete(data, index, axis=1)
+    index = header.index(feature_name)
+    del header[index]
+    data = list(zip(*data))
+    del data[index]
+    data = list(map(list, zip(*data)))
+    return header, data
 
 
 def convert_date(header, data):
-    assert "Date/Hour" in header, "Index of Date/Hour does not exist"
+    index = header.index("Date/Hour")
+    header += ["Year", "Month", "Day", "Hour", "Weekday"]
+    for d in data:
+        dt = datetime.fromisoformat(d[index])
+        d += [dt.year, dt.month, dt.day, dt.hour, dt.date().weekday()]
 
-    new_data = []
-    index = np.where(header == "Date/Hour")
-
-    for i, d in enumerate(data):
-        dt = datetime.fromisoformat(d[index][0])
-        new_data.append(
-            [dt.year, dt.month, dt.day, dt.hour,
-             dt.date().weekday()])
-
-    data = np.delete(data, index, axis=1)
-    data = np.concatenate((data, new_data), axis=1)
-
-    header = np.delete(header, index)
-    header = np.concatenate((header,
-                             ["Year", "Month", "Day", "Hour", "Weekday"]))
-
-    return np.asarray(header), np.asarray(data)
+    return delete_feature(header, data, "Date/Hour")
 
 
 def convert_one_hot(header, data, feature_name):
-    assert feature_name in header, "Index of {} does not exist".format(
-        feature_name)
+    index = header.index(feature_name)
+    values = list(set(list(zip(*data))[index]))
+    header += [feature_name + " " + str(v) for v in values]
+    for d in data:
+        d += [1 if v == d[index] else 0 for v in values]
 
-    index = np.where(header == feature_name)
-    mapping, enc = np.unique(data[:, index], return_inverse=True)
-    add_header = [feature_name + " " + str(m) for m in mapping]
-
-    header = np.delete(header, index)
-    header = np.concatenate((header, add_header))
-
-    new_data = [
-        np.eye(mapping.shape[0])[e] for i, (d, e) in enumerate(zip(data, enc))
-    ]
-
-    data = np.delete(data, index, axis=1)
-    data = np.concatenate((data, new_data), axis=1)
-
-    return np.asarray(header), np.asarray(data)
+    return delete_feature(header, data, feature_name)
 
 
 def convert_weather(header, data, weather):
-    assert "Weather" in header, "Index of Weather does not exist"
-
     N = len(weather)
-    index = np.where(header == "Weather")
+    index = header.index("Weather")
+    header += weather
+    for d in data:
+        d += [
+            1 if any([w == v for v in d[index].split(",")]) else 0
+            for w in weather
+        ]
 
-    new_data = [[
-        1 if any([w == v for v in d[index][0].split(",")]) else 0
-        for w in weather
-    ] for i, d in enumerate(data)]
-
-    data = np.delete(data, index, axis=1)
-    data = np.concatenate((data, new_data), axis=1)
-
-    header = np.delete(header, index)
-    header = np.concatenate((header, weather))
-
-    return np.asarray(header), np.asarray(data)
+    return delete_feature(header, data, "Weather")
 
 
 def remove_missing(data):
-    return np.asarray([d for d in data if "" not in d])
+    return [d for d in data if "" not in d]
 
 
 def convert_type(data):
-    return np.asarray([[v.replace(",", ".") for v in d] for d in data],
-                      dtype=float)
+    return [[
+        float(v.replace(",", ".")) if isinstance(v, str) else v for v in d
+    ] for d in data]
 
 
 def normalization_feature(header, data, feature_name):
-    assert feature_name in header, "Index of {} does not exist".format(
-        feature_name)
-    index = np.where(header == feature_name)[0][0]
-    data[:, index] = (data[:, index] - np.mean(data[:, index])) / np.std(
-        data[:, index])
+    index = header.index(feature_name)
+    data = list(map(list, zip(*data)))
+    mean = statistics.mean(data[index])
+    std = statistics.stdev(data[index])
+    data = list(map(list, zip(*data)))
+    for d in data:
+        d[index] = (d[index] - mean) / std
+
+    return header, data
 
 
 def split(header, data):
-    y_index = np.where(header == "Withdrawals")[0]
-    l_index = np.where(header == "Volume")[0]
-
-    if len(y_index) > 0:
-        y_index = y_index[0]
-    if len(l_index) > 0:
-        l_index = l_index[0]
-
-    y = data[:, y_index].reshape(-1)
-    label = data[:, l_index].reshape(-1)
-    x = np.delete(data, (y_index, l_index), 1)
-
-    header = np.delete(header, (y_index, l_index))
+    y_index = header.index("Withdrawals")
+    l_index = header.index("Volume")
+    data = list(map(list, zip(*data)))
+    y = data[y_index]
+    label = data[l_index]
+    data = list(map(list, zip(*data)))
+    header, data = delete_feature(header, data, "Withdrawals")
+    header, x = delete_feature(header, data, "Volume")
 
     return header, x, y, label
 
 
 def plot_feature(header, x, feature_name):
-    assert feature_name in header, "Index of {} does not exist".format(
-        feature_name)
-    index = np.where(header == feature_name)[0][0]
-
+    index = header.index(feature_name)
     plt.figure(figsize=(6, 4), dpi=300)
-    sns.distplot(x[:, index])
+    sns.distplot(list(map(list, zip(*x)))[index])
     plt.show()
 
 
 def corr_matrix(header, x):
-    mask = np.zeros((x.shape[1], x.shape[1]), dtype=np.bool)
+    mask = np.zeros((len(x[0]), len(x[0])), dtype=np.bool)
     mask[np.triu_indices_from(mask)] = True
     cmap = sns.diverging_palette(220, 10, as_cmap=True)
     plt.figure(figsize=(14, 12), dpi=300)
     sns.heatmap(
-        np.corrcoef(x.T),
+        np.corrcoef(list(map(list, zip(*x)))),
         mask=mask,
         center=0,
         cmap=cmap,
@@ -176,9 +146,10 @@ def corr_matrix(header, x):
 
 
 def feature_output_corr(header, x, y, limit=None):
-    coeff = [np.corrcoef(feature, y)[0][1] for feature in x.T]
+    coeff = [
+        np.corrcoef(feature, y)[0][1] for feature in list(map(list, zip(*x)))
+    ]
     abs_coeff = list(map(abs, coeff))
-
     for _, coeff, name in itertools.islice(
             sorted(zip(abs_coeff, coeff, header), reverse=True), limit):
         print("{:30} : {:6.3f}".format(name, coeff))
@@ -202,7 +173,7 @@ def compute_f1(proba, y_true, step=0.01, plot=False):
 
 
 def missing_to_value(header, data, feature_name, new_value):
-    index = np.where(header == feature_name)[0][0]
+    index = header.index(feature_name)
     for d in data:
         if d[index] == "":
             d[index] = new_value
@@ -279,14 +250,14 @@ def pipeline(path="data/training.csv",
 
     for f in norm_features:
         start = time.time()
-        normalization_feature(header, data, f)
+        header, data = normalization_feature(header, data, f)
         print("{} normalized ({:.1f}s)".format(f, time.time() - start))
 
     start = time.time()
-#     index = np.where(header == 'Station Code')[0][0]
-#     data = data[data[:, index].argsort()]
-#     print("Sort data according to station code ({:.1f}s)".format(time.time() -
-#                                                                  start))
+    index = header.index('Station Code')
+    data.sort(key=lambda x: x[index])
+    print("Sort data according to station code ({:.1f}s)".format(time.time() -
+                                                                 start))
 
     start = time.time()
     header, x, y, label = split(header, data)
