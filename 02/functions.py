@@ -130,8 +130,13 @@ def normalization_feature(header, data, feature_name):
 
 
 def split(header, data):
-    y_index = np.where(header == "Withdrawals")[0][0]
-    l_index = np.where(header == "Volume")[0][0]
+    y_index = np.where(header == "Withdrawals")[0]
+    l_index = np.where(header == "Volume")[0]
+
+    if len(y_index) > 0:
+        y_index = y_index[0]
+    if len(l_index) > 0:
+        l_index = l_index[0]
 
     y = data[:, y_index].reshape(-1)
     label = data[:, l_index].reshape(-1)
@@ -278,10 +283,10 @@ def pipeline(path="data/training.csv",
         print("{} normalized ({:.1f}s)".format(f, time.time() - start))
 
     start = time.time()
-    index = np.where(header == 'Station Code')[0][0]
-    data = data[data[:, index].argsort()]
-    print("Sort data according to station code ({:.1f}s)".format(time.time() -
-                                                                 start))
+#     index = np.where(header == 'Station Code')[0][0]
+#     data = data[data[:, index].argsort()]
+#     print("Sort data according to station code ({:.1f}s)".format(time.time() -
+#                                                                  start))
 
     start = time.time()
     header, x, y, label = split(header, data)
