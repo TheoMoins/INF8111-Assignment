@@ -189,14 +189,16 @@ def pipeline(path="data/training.csv",
                  "Généralement nuageux", "Pluie", "Pluie modérée",
                  "Pluie forte", "Dégagé", "Nuageux", "Neige"
              ],
-             one_hot_features=["Year", "Month", "Weekday"],
+             one_hot_features=["Weekday"],
              norm_features=[
                  "Temperature (°C)", "Drew point (°C)",
                  "Relativite humidity (%)", "wind direction (10s deg)",
-                 "Wind speed (km/h)", "Pressure at the station (kPa)"
+                 "Wind speed (km/h)", "Pressure at the station (kPa)",
+                 "Visibility (km)"
              ],
              missing_features=['wind direction (10s deg)'],
-             missing_values=[23]):
+             missing_values=[23],
+             test=False):
     """
     path :           (STRING) path of the file to load.
     limit:           (INT) limit the number of example to load.
@@ -259,10 +261,13 @@ def pipeline(path="data/training.csv",
     print("Sort data according to station code ({:.1f}s)".format(time.time() -
                                                                  start))
 
-    start = time.time()
-    header, x, y, label = split(header, data)
-    print("split data into x, y, and label ({:.1f}s)".format(time.time() -
+    if not test:
+        start = time.time()
+        header, x, y, label = split(header, data)
+        print("split data into x, y, and label ({:.1f}s)".format(time.time() -
                                                              start))
+        gc.collect()
+        return header, x, y, label
 
-    gc.collect()
-    return header, x, y, label
+    else:
+        return header, data
