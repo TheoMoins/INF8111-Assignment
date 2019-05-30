@@ -179,6 +179,40 @@ def missing_to_value(header, data, feature_name, new_value):
             d[index] = new_value
     return header, data
 
+def sort_by_duration(header, x, y, label):
+    index_y = header.index("Year")
+    index_m = header.index("Month")
+    index_d = header.index("Day")
+    index_h = header.index("Day")
+    
+    time = [v[index_h]+v[index_d]*24+v[index_m]*24*31+v[index_y]*24*31*365 for v in x]
+    
+    x= list(zip(*sorted(list(zip(time, x)))))[1]
+    y = list(zip(*sorted(list(zip(time, y)))))[1]
+    label = list(zip(*sorted(list(zip(time, label)))))[1]
+    
+    return x, y, label
+
+def sort_by_station(header, x, y=None, label=None):
+    index = header.index("Station Code")
+    stations = list(set(list(zip(*x))[index]))
+    x_stations = [[] for _ in stations]
+
+    if y and label:
+        y_stations = [[] for _ in stations]
+        label_stations = [[] for _ in stations]
+        for _x, _y, _label in zip(x, y, label):
+            s = stations.index(_x[index])
+            x_stations[s].append(_x)
+            y_stations[s].append(_y)
+            label_stations[s].append(_label)
+        return header, stations, x_stations, y_stations, label_stations
+    else:
+        for _x in x:
+            s = stations.index(_x[index])
+            x_stations[s].append(_x)
+        return header, stations, x_stations
+
 
 def pipeline(path="data/training.csv",
              limit=None,
