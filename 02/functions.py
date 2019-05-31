@@ -183,9 +183,9 @@ def sort_by_duration(header, x, y, label):
     index_y = header.index("Year")
     index_m = header.index("Month")
     index_d = header.index("Day")
-    index_h = header.index("Day")
+    index_h = header.index("Hour")
     
-    time = [v[index_h]+v[index_d]*24+v[index_m]*24*31+v[index_y]*24*31*365 for v in x]
+    time = [v[index_h]+v[index_d]*24+v[index_m]*24*31+v[index_y]*24*365 for v in x]
     
     x= list(zip(*sorted(list(zip(time, x)))))[1]
     y = list(zip(*sorted(list(zip(time, y)))))[1]
