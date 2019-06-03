@@ -84,6 +84,20 @@ def convert_weather(header, data, weather):
 
     return delete_feature(header, data, "Weather")
 
+def convert_weather_coef(header, data, weather, weather_coef):
+    header+= ["Weather_Coef"]
+    ind_col = [header.index(w) for w in weather]
+    for d in data:
+        d_weather = d[ind_col[0]:ind_col[-1]]
+        if sum(d_weather)!= 0:
+            wc_d = sum([a*b for (a,b) in zip (d_weather, weather_coef)])/sum(d_weather)
+            d += [wc_d]
+        else:
+            d += [-1]
+    for w in weather:
+        header, data = delete_feature(header, data, w)
+    return header, data
+
 
 def remove_missing(data):
     return [d for d in data if "" not in d]
@@ -179,7 +193,7 @@ def missing_to_value(header, data, feature_name, new_value):
             d[index] = new_value
     return header, data
 
-def sort_by_duration(header, x, y, label):
+def sort_by_duration(header, x, y=None, label=None):
     index_y = header.index("Year")
     index_m = header.index("Month")
     index_d = header.index("Day")
@@ -188,8 +202,9 @@ def sort_by_duration(header, x, y, label):
     time = [v[index_h]+v[index_d]*24+v[index_m]*24*31+v[index_y]*24*365 for v in x]
     
     x= list(zip(*sorted(list(zip(time, x)))))[1]
-    y = list(zip(*sorted(list(zip(time, y)))))[1]
-    label = list(zip(*sorted(list(zip(time, label)))))[1]
+    if y and label:
+        y = list(zip(*sorted(list(zip(time, y)))))[1]
+        label = list(zip(*sorted(list(zip(time, label)))))[1]
     
     return x, y, label
 
@@ -232,7 +247,8 @@ def pipeline(path="data/training.csv",
              ],
              missing_features=['wind direction (10s deg)'],
              missing_values=[23],
-             test=False):
+             test=False,
+             weather_coef = []):
     """
     path :           (STRING) path of the file to load.
     limit:           (INT) limit the number of example to load.
@@ -270,6 +286,11 @@ def pipeline(path="data/training.csv",
         start = time.time()
         header, data = convert_weather(header, data, weather)
         print("Weather converted ({:.1f}s)".format(time.time() - start))
+       
+    if weather_coef:
+        start = time.time()
+        header, data = convert_weather_coef(header, data, weather, weather_coef)
+        print("Weather rescaled ({:.1f}s)".format(time.time() - start))
 
     for f, v in zip(missing_features, missing_values):
         start = time.time()
